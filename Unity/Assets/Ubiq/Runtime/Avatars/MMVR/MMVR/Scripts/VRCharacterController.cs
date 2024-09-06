@@ -56,6 +56,8 @@ public class VRCharacterController : MotionMatchingCharacterController
         float3 currentPos = GetCurrentHMDPosition();
         quaternion currentRot = GetCurrentHMDRotation();
 
+        Debug.Log(HMDDevice.position);
+
         // Input
         float3 desiredVelocity = tracker.GetSmoothedVelocity();
         float sqDesiredVelocity = math.lengthsq(desiredVelocity);

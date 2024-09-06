@@ -14,6 +14,7 @@ namespace MotionMatching
     using Debug = UnityEngine.Debug;
 
     // Simulation bone is the transform
+    [DefaultExecutionOrder(10)]
     public class MotionMatchingController : MonoBehaviour
     {
         public event Action OnSkeletonTransformUpdated;
