@@ -1,18 +1,22 @@
 using MotionMatching;
+using Ubiq.MotionMatching;
 using Unity.Mathematics;
 using UnityEngine;
 
 namespace UBIK
 {
+    /// <summary>
+    /// An UpperBody destination designed to work with a Unity Humanoid enabled
+    /// avatar.
+    /// </summary>
     public class UpperBodyAvatar : MonoBehaviour
     {
-        public bool OnlyHMD;
+        [Tooltip("The source of the information to use for reconstructing the upper body pose. If null, will try to find among parents at start.")]
+        public MMVRAvatar mmvrAvatar;
         [Tooltip("Time in seconds to reach 50% of the target value provided by the IK.")]
         [Range(0.0f, 1.0f)] public float SmoothingHalfLife = 0.1f;
-
-        public Transform HeadTracker;
-        public Transform LeftTracker;
-        public Transform RightTracker;
+        [Tooltip("Optional. If null, will try to find among child objects at start. If provided or found, this class will update after the lower body for the smoothest result. If missing, this class will update immediately on receiving data from the MMVR system.")]
+        public LowerBodyAvatar lowerBodyAvatar;
 
         public Joint[] Joints;
 
@@ -20,23 +24,40 @@ namespace UBIK
         [SerializeField]
         private quaternion[] DefaultPose;
 
-        private MotionMatchingSkinnedMeshRenderer MMRenderer;
-        private AvatarMaskData LowerBodyMask;
-        private UBIK UpperBodyIK;
-        private quaternion ForwardLocalLHand;
-        private quaternion ForwardLocalRHand;
-        private quaternion[] PreviousLocalRotations;
-        private float3[] JointVelocities;
-
+        private UBIK upperBodyIK;
+        private quaternion forwardLocalLHand;
+        private quaternion forwardLocalRHand;
+        private quaternion[] previousLocalRotations;
+        private float3[] jointVelocities;
+        
         private void Awake()
         {
-            UpperBodyIK = new UBIK();
-            UpperBodyIK.Init(GetSkeleton(), GetDefaultPose());
-            if (TryGetComponent(out MotionMatchingSkinnedMeshRenderer renderer))
+            if (!mmvrAvatar)
             {
-                MMRenderer = renderer;
-                LowerBodyMask = renderer.AvatarMask;
+                mmvrAvatar = GetComponentInParent<MMVRAvatar>();
+                if (!mmvrAvatar)
+                {
+                    Debug.LogWarning("No MMVRAvatar could be found among parents. This script will be disabled.");
+                    enabled = false;
+                    return;
+                }
             }
+            
+            if (!lowerBodyAvatar)
+            {
+                lowerBodyAvatar = GetComponentInChildren<LowerBodyAvatar>();
+            }
+            
+            mmvrAvatar.OnPosesUpdated.AddListener(MMVRAvatar_OnPosesUpdated);
+            
+            if (lowerBodyAvatar)
+            {
+                lowerBodyAvatar.OnSkeletonUpdated.AddListener(LowerBodyAvatar_OnSkeletonUpdated);
+            }
+
+            upperBodyIK = new UBIK();
+            upperBodyIK.Init(GetSkeleton(), GetDefaultPose());
+
             // Compute Forward vectors of the hands in local space
             if (TryGetComponent<Animator>(out var animator))
             {
@@ -57,39 +78,60 @@ namespace UBIK
                     up = hand.InverseTransformDirection(up);
                     return quaternion.LookRotationSafe(forward, up);
                 }
-                ForwardLocalLHand = getForwardUpHand(HumanBodyBones.LeftHand, HumanBodyBones.LeftIndexDistal, HumanBodyBones.LeftThumbProximal);
-                ForwardLocalRHand = getForwardUpHand(HumanBodyBones.RightHand, HumanBodyBones.RightIndexDistal, HumanBodyBones.RightThumbProximal);
+                forwardLocalLHand = getForwardUpHand(HumanBodyBones.LeftHand, HumanBodyBones.LeftIndexDistal, HumanBodyBones.LeftThumbProximal);
+                forwardLocalRHand = getForwardUpHand(HumanBodyBones.RightHand, HumanBodyBones.RightIndexDistal, HumanBodyBones.RightThumbProximal);
             }
-            PreviousLocalRotations = new quaternion[Joints.Length];
-            JointVelocities = new float3[Joints.Length];
+            previousLocalRotations = new quaternion[Joints.Length];
+            jointVelocities = new float3[Joints.Length];
         }
-
+        
         private void OnEnable()
         {
-            if (MMRenderer != null)
-            {
-                MMRenderer.OnSkeletonUpdated += AfterSkeletonUpdated;
-            }
+            // if (!mmvrAvatar)
+            // {
+            //     mmvrAvatar = GetComponentInParent<MMVRAvatar>();
+            //     if (!mmvrAvatar)
+            //     {
+            //         Debug.LogWarning("No MMVRAvatar could be found among parents. This script will be disabled.");
+            //         enabled = false;
+            //         return;
+            //     }
+            // }
+            //
+            // mmvrAvatar.OnPosesUpdated.AddListener(MMVRAvatar_OnPosesUpdated);
         }
 
-        private void OnDisable()
+        private void OnDestroy()
         {
-            if (MMRenderer != null)
+            if (lowerBodyAvatar)
             {
-                MMRenderer.OnSkeletonUpdated -= AfterSkeletonUpdated;
+                lowerBodyAvatar.OnSkeletonUpdated.RemoveListener(LowerBodyAvatar_OnSkeletonUpdated);
+            }
+            
+            if (mmvrAvatar)
+            {
+                mmvrAvatar.OnPosesUpdated.RemoveListener(MMVRAvatar_OnPosesUpdated);
             }
         }
-
-        public void AfterSkeletonUpdated()
+        
+        private void MMVRAvatar_OnPosesUpdated()
         {
-            if (MMRenderer != null)
+            if (!lowerBodyAvatar)
             {
-                MMRenderer.AvatarMask = OnlyHMD ? null : LowerBodyMask;
+                Refresh();
             }
-
+        }
+        
+        private void LowerBodyAvatar_OnSkeletonUpdated()
+        {
+            Refresh();
+        }
+        
+        private void Refresh()
+        {
             Transform hips = GetHipsTransform();
 
-            quaternion getWorldHandTarget(int index, Transform tracker, quaternion forwardLocalHand)
+            quaternion getWorldHandTarget(int index, Pose tracker, quaternion forwardLocalHand)
             {
                 Transform hand = GetJointTransform(index);
                 quaternion targetRot = quaternion.LookRotation(tracker.forward, tracker.up);
@@ -97,33 +139,32 @@ namespace UBIK
                 quaternion delta = math.mul(targetRot, math.inverse(currentRot)); // delta rotation from current to target
                 return math.mul(delta, hand.rotation);
             }
-            quaternion lhandRot = getWorldHandTarget(17, LeftTracker, ForwardLocalLHand);
-            quaternion rhandRot = getWorldHandTarget(21, RightTracker, ForwardLocalRHand);
+            quaternion lhandRot = getWorldHandTarget(17, mmvrAvatar.leftHand, forwardLocalLHand);
+            quaternion rhandRot = getWorldHandTarget(21, mmvrAvatar.rightHand, forwardLocalRHand);
 
             for (int i = 0; i < Joints.Length; ++i)
             {
                 if (Joints[i].Transform != null)
                 {
-                    PreviousLocalRotations[i] = Joints[i].Transform.localRotation;
+                    previousLocalRotations[i] = Joints[i].Transform.localRotation;
                 }
             }
 
-
-            UpperBodyIK.Solve(new UBIK.Target
+            upperBodyIK.Solve(new UBIK.Target
             {
-                Position = HeadTracker.position,
-                Rotation = HeadTracker.rotation
+                Position = mmvrAvatar.neck.position,
+                Rotation = mmvrAvatar.neck.rotation
             }, new UBIK.Target
             {
                 Position = hips.position,
                 Rotation = hips.rotation
             }, new UBIK.Target
             {
-                Position = LeftTracker.position,
+                Position = mmvrAvatar.leftHand.position,
                 Rotation = lhandRot
             }, new UBIK.Target
             {
-                Position = RightTracker.position,
+                Position = mmvrAvatar.rightHand.position,
                 Rotation = rhandRot
             });
 
@@ -131,9 +172,9 @@ namespace UBIK
             {
                 if (Joints[i].Transform != null)
                 {
-                    quaternion currentLocalRotation = PreviousLocalRotations[i];
+                    quaternion currentLocalRotation = previousLocalRotations[i];
                     quaternion targetLocalRotation = Joints[i].Transform.localRotation;
-                    Spring.SimpleSpringDamperImplicit(ref currentLocalRotation, ref JointVelocities[i], targetLocalRotation, SmoothingHalfLife, Time.deltaTime);
+                    Spring.SimpleSpringDamperImplicit(ref currentLocalRotation, ref jointVelocities[i], targetLocalRotation, SmoothingHalfLife, Time.deltaTime);
                     Joints[i].Transform.localRotation = currentLocalRotation;
                 }
             }

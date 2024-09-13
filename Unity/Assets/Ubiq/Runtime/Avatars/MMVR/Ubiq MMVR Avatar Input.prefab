@@ -102,7 +102,7 @@ GameObject:
   - component: {fileID: 4132170291569262069}
   - component: {fileID: 4048830181758323240}
   m_Layer: 0
-  m_Name: Ubiq MMVR Input
+  m_Name: Ubiq MMVR Avatar Input
   m_TagString: Untagged
   m_Icon: {fileID: 0}
   m_NavMeshLayer: 0
@@ -141,13 +141,15 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: d820052d234635c449190e89ede6631d, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
-  left: {fileID: 8533295812996011969}
-  right: {fileID: 5134375488559397627}
-  head: {fileID: 2122360933377313969}
-  neck: {fileID: 6105042885270604938}
-  leftFallback: {fileID: 2793045714690989257}
-  rightFallback: {fileID: 2001319662555396356}
+  avatarManager: {fileID: 0}
+  priority: 0
   lowerBodySource: {fileID: 6858631892501393558}
+  neck: {fileID: 6105042885270604938}
+  leftHandFallback: {fileID: 2793045714690989257}
+  rightHandFallback: {fileID: 2001319662555396356}
+  head: {fileID: 2122360933377313969}
+  leftHand: {fileID: 8533295812996011969}
+  rightHand: {fileID: 5134375488559397627}
 --- !u!1 &4520812446110659688
 GameObject:
   m_ObjectHideFlags: 0

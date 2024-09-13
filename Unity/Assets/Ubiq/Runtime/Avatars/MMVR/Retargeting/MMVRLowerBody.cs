@@ -9,7 +9,7 @@ namespace Ubiq.MotionMatching
     /// </summary>
     public class MMVRLowerBody : LowerBody, IHipSpace
     {
-        [Header("Calirbation")]
+        [Header("Calibration")]
         public float angleOffset = 0f;
         public float inclinationOffset = 0f;
 

@@ -2,139 +2,215 @@ using System;
 using Ubiq;
 using Ubiq.Avatars;
 using UnityEngine;
+using UnityEngine.Serialization;
 
 namespace Ubiq.MotionMatching
 {
-    [DefaultExecutionOrder(9)]
-    public class MMVRAvatarInput : MonoBehaviour
+    public interface IMMVRInput : AvatarInput.IInput
     {
-        [SerializeField] private Transform left;
-        [SerializeField] private Transform right;
-        [SerializeField] private Transform head;
-        [SerializeField] private Transform neck;
-        [SerializeField] private Transform leftFallback;
-        [SerializeField] private Transform rightFallback;
-        [SerializeField] private MMVRLowerBody lowerBodySource;
-
-        private Pose leftPose;
-        private Pose rightPose;
-        private Pose headPose;
-
-        public Transform LeftTracker => left;
-        public Transform RightTracker => right;
-        public Transform HeadTracker => neck;
-        public MMVRLowerBody LowerBody => lowerBodySource;
-
-        private AvatarInput input;
-
-        [Tooltip("Optional source for Head and Hand Tracking. If not null, will be used instead of the AvatarManager Input")]
-        public HeadAndHandsAvatar headAndHandsAvatar;
+        /// <summary>
+        /// Neck position and rotation in world space. Processed to ensure safe
+        /// poses for a motion matching/IK rig.
+        /// </summary>
+        Pose neck { get; } 
+        
+        /// <summary>
+        /// Left hand position and rotation in world space. Processed to ensure
+        /// safe poses for a motion matching/IK rig.
+        /// </summary>
+        Pose leftHand { get; }
 
         /// <summary>
-        /// Points to the shared local instance that represents the users XR system, if any.
+        /// Right hand position and rotation in world space.  Processed to ensure
+        /// safe poses for a motion matching/IK rig.
         /// </summary>
-        public static MMVRAvatarInput Local { get; private set; }
-
-        private void Awake()
+        Pose rightHand { get; }
+        
+        // /// <summary>
+        // /// Hip position and rotation in world space. Processed to ensure safe
+        // /// poses for a motion matching/IK rig.
+        // /// </summary>
+        // Pose hips { get; }
+        
+        /// <summary>
+        /// Representation of left leg pose. Can be used to reconstruct joint
+        /// poses.
+        /// </summary>
+        LegPose leftLeg { get; }
+        
+        /// <summary>
+        /// Representation of right leg pose. Can be used to reconstruct joint
+        /// poses.
+        /// </summary>
+        LegPose rightLeg { get; }
+    }
+    
+    public class MMVRAvatarInput : MonoBehaviour
+    {
+        [Tooltip("The AvatarManager to provide input to. If null, will try to find an AvatarManager in the scene at start.")]
+        [SerializeField] private AvatarManager avatarManager;
+        [Tooltip("Higher priority inputs will override lower priority inputs of the same type if multiple exist.")]
+        public int priority;
+        [Tooltip("The lower body source to use for input. If null, will try to find a lower body source among child objects at start.")]
+        [SerializeField] private MMVRLowerBody lowerBodySource;
+        [Tooltip("The transform to use as an offset for the neck from the head.")]
+        [SerializeField] private Transform neck;
+        [Tooltip("The transform to use as world pose for the left hand in case no left hand input is found. This may happen in case of tracking failure for controllers or hands.")]
+        [SerializeField] private Transform leftHandFallback;
+        [Tooltip("The transform to use as world pose for the right hand in case no right hand input is found. This may happen in case of tracking failure for controllers or hands.")]
+        [SerializeField] private Transform rightHandFallback;
+        [Tooltip("The transform containing the latest head pose. Will be frequently overwritten.")]
+        [SerializeField] private Transform head;
+        [Tooltip("The transform containing the latest leftHand pose. Will be frequently overwritten.")]
+        [SerializeField] private Transform leftHand;
+        [Tooltip("The transform containing the latest rightHand pose. Will be frequently overwritten.")]
+        [SerializeField] private Transform rightHand;
+        
+        private class MMVRInput : IMMVRInput
         {
-            if (transform.parent == null)
+            public int priority => owner.priority;
+            public bool active => owner.isActiveAndEnabled;
+            
+            public Pose neck => owner.Neck();
+            public Pose leftHand => owner.LeftHand();
+            public Pose rightHand => owner.RightHand();
+            public LegPose leftLeg => owner.LeftLeg();
+            public LegPose rightLeg => owner.RightLeg();
+            
+            private MMVRAvatarInput owner;
+            
+            public MMVRInput(MMVRAvatarInput owner)
             {
-                Local = this;
+                this.owner = owner;
             }
-            else
+            
+            private static InputVar<Pose> GetVar(Transform transform)
             {
-                //transform.parent = null;
+                return transform 
+                    ? new InputVar<Pose>(
+                        new Pose(transform.position,transform.rotation))
+                    : InputVar<Pose>.invalid;
             }
         }
-
-        void Start()
+        
+        private MMVRInput input;
+        
+        private void Start()
         {
-            if (headAndHandsAvatar)
+            if (!avatarManager)
             {
-                headAndHandsAvatar.OnHeadUpdate.AddListener(HeadAndHandsAvatar_OnHead);
-                headAndHandsAvatar.OnLeftHandUpdate.AddListener(HeadAndHandsAvatar_OnLeftHand);
-                headAndHandsAvatar.OnRightHandUpdate.AddListener(HeadAndHandsAvatar_OnRightHand);
+                avatarManager = FindAnyObjectByType<AvatarManager>();
+
+                if (!avatarManager)
+                {
+                    Debug.LogWarning("No AvatarManager could be found in this Unity scene. This script will be disabled.");
+                    enabled = false;
+                    return;
+                }
             }
-            else
+            
+            if (!lowerBodySource)
             {
-                var avatarManager = FindAnyObjectByType<AvatarManager>();
-                SetInput(avatarManager.input);
+                lowerBodySource = GetComponentInChildren<MMVRLowerBody>();
+                
+                if (!lowerBodySource)
+                {
+                    Debug.LogWarning("No LowerBodySource could be found among child objects. This script will be disabled.");
+                    enabled = false;
+                    return;
+                }
             }
+            
+            input = new MMVRInput(this);
+            avatarManager.input.Add((IMMVRInput)input);
         }
 
-        public void SetInput(AvatarInput input)
+        private Pose Neck()
         {
-            this.input = input;
+            RefreshHierarchy();
+            return new Pose(neck.position,neck.rotation);
         }
-
-        void Update()
+        
+        private Pose LeftHand()
         {
-            if (input != null && input.TryGet(out IHeadAndHandsInput src))
-            {
-                HeadAndHandsAvatar_OnHead(src.head);
-                HeadAndHandsAvatar_OnLeftHand(src.leftHand);
-                HeadAndHandsAvatar_OnRightHand(src.rightHand);
-            }
-
-            // Update the left and right fallback gameobjects
-
-            transform.position = new Vector3(neck.position.x, 0, neck.position.z);
-            var headForward = head.forward;
-            headForward.y = 0;
-            headForward.Normalize();
-            transform.rotation = Quaternion.LookRotation(headForward, Vector3.up);
-
-            head.SetPositionAndRotation(headPose.position, headPose.rotation);
-            left.SetPositionAndRotation(leftPose.position, leftPose.rotation);
-            right.SetPositionAndRotation(rightPose.position, rightPose.rotation);
+            RefreshHierarchy();
+            return new Pose(leftHand.position,leftHand.rotation);
         }
-
-        private void HeadAndHandsAvatar_OnHead(InputVar<Pose> headPose)
+        
+        private Pose RightHand()
         {
-            if(headPose.valid)
-            {
-                this.headPose = headPose.value;
-            }
+            RefreshHierarchy();
+            return new Pose(rightHand.position,rightHand.rotation);
         }
-
-        private void HeadAndHandsAvatar_OnLeftHand(InputVar<Pose> leftHandPose)
+        
+        private LegPose LeftLeg()
         {
-            if (leftHandPose.valid)
-            {
-                this.leftPose = leftHandPose.value;
-            }
-            else
-            {
-                this.leftPose.position = leftFallback.position;
-                this.leftPose.rotation = leftFallback.rotation;
-            }
+            return lowerBodySource.LeftPose;
         }
-
-        private void HeadAndHandsAvatar_OnRightHand(InputVar<Pose> rightHandPose)
+        
+        private LegPose RightLeg()
         {
-            if (rightHandPose.valid)
-            {
-                this.rightPose = rightHandPose.value;
-            }
-            else
-            {
-                this.rightPose.position = rightFallback.position;
-                this.rightPose.rotation = rightFallback.rotation;
-            }
+            return lowerBodySource.RightPose;
         }
-
-        private void OnDestroy()
+        
+        private void RefreshHierarchy()
         {
-            if (!headAndHandsAvatar)
+            IHeadAndHandsInput input;
+            if (!avatarManager.input.TryGet(out input))
             {
+                Debug.LogWarning("Missing IHeadAndHandsInput. Ensure there is an input of this type in the scene.");
                 return;
             }
+            
+            var inputHead = input.head.value;
+            if (!input.head.valid)
+            {
+                // TODO
+                Debug.LogWarning("Invalid head pose. Not currently handled.");
+            }
+            
+            if (inputHead.position != head.position)
+            {
+                var forward = inputHead.forward;
+                forward.y = 0;
+                forward.Normalize();
+                transform.SetPositionAndRotation(
+                    position: new Vector3(inputHead.position.x, 0, inputHead.position.z),
+                    rotation: Quaternion.LookRotation(forward, Vector3.up));
+            }
 
-            headAndHandsAvatar.OnHeadUpdate.RemoveListener(HeadAndHandsAvatar_OnHead);
-            headAndHandsAvatar.OnLeftHandUpdate.RemoveListener(HeadAndHandsAvatar_OnLeftHand);
-            headAndHandsAvatar.OnRightHandUpdate.RemoveListener(HeadAndHandsAvatar_OnRightHand);
+            head.position = inputHead.position;
+            head.rotation = inputHead.rotation;
+            
+            var inputLeftHand = input.leftHand.value;
+            if (!input.leftHand.valid)
+            {
+                inputLeftHand = new Pose(rightHandFallback.position,rightHandFallback.rotation);
+            }
 
-            headAndHandsAvatar = null;
+            //TODO processing to ensure good IK
+            
+            leftHand.position = inputLeftHand.position;
+            leftHand.rotation = inputLeftHand.rotation;
+            
+            var inputRightHand = input.rightHand.value;
+            if (!input.rightHand.valid)
+            {
+                inputRightHand = new Pose(rightHandFallback.position,rightHandFallback.rotation);
+            }
+
+            //TODO processing to ensure good IK
+            
+            rightHand.position = inputRightHand.position;
+            rightHand.rotation = inputRightHand.rotation;
+        }
+        
+        private void OnDestroy()
+        {
+            if (avatarManager)
+            {
+                avatarManager.input?.Remove((IMMVRInput)input);
+            }
         }
     }
 }

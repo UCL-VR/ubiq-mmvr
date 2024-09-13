@@ -1,6 +1,6 @@
-using UBIK;
+using System;
 using UnityEngine;
-using UnityEngine.Rendering;
+using UnityEngine.Events;
 
 namespace Ubiq.MotionMatching
 {
@@ -10,14 +10,17 @@ namespace Ubiq.MotionMatching
     /// </summary>
     public class LowerBodyAvatar : MonoBehaviour, IHipSpace
     {
+        [Tooltip("The source of the information to use for reconstructing the lower body pose. If null, will try to find among parents at start.")]
+        public MMVRAvatar mmvrAvatar;
+        
+        public SkeletonUpdatedEvent OnSkeletonUpdated; 
+        [Serializable] public class SkeletonUpdatedEvent : UnityEvent { }
+        
         public bool UpdateRootTransform = true;
         public bool UpdateLegTransforms = true;
 
         public LowerBody LowerBodySource;
         public LowerBodyAvatarCalibration Calibration;
-
-        public LegPose LeftPose;
-        public LegPose RightPose;
 
         [Header("Debug")]
 
@@ -27,23 +30,43 @@ namespace Ubiq.MotionMatching
 
         private Transform hips;
         private Leg left;
+        private LegPose leftPose;
         private Leg right;
-
+        private LegPose rightPose;
 
         private Quaternion hipsToLocal = Quaternion.identity;
         private Quaternion localToHips => Quaternion.Inverse(hipsToLocal);
         private Quaternion localToLeg = Quaternion.identity;
 
-        private UpperBodyAvatar upperBodyAvatar;
-
-        private void Awake()
-        {
-            upperBodyAvatar = GetComponent<UpperBodyAvatar>();
-        }
-
         private void Start()
         {
+            if (!mmvrAvatar)
+            {
+                mmvrAvatar = GetComponentInParent<MMVRAvatar>();
+                if (!mmvrAvatar)
+                {
+                    Debug.LogWarning("No MMVRAvatar could be found among parents. This script will be disabled.");
+                    enabled = false;
+                    return;
+                }
+            }
+            
             InitialiseBindPose();
+            
+            mmvrAvatar.OnPosesUpdated.AddListener(MMVRAvatar_OnPosesUpdated);
+        }
+
+        private void OnDestroy()
+        {
+            if (mmvrAvatar)
+            {
+                mmvrAvatar.OnPosesUpdated.RemoveListener(MMVRAvatar_OnPosesUpdated);
+            }
+        }
+
+        private void MMVRAvatar_OnPosesUpdated()
+        {
+            Refresh();
         }
 
         public Vector3 InverseTransformPoint(Vector3 world)
@@ -79,7 +102,7 @@ namespace Ubiq.MotionMatching
             );
         }
 
-        private void Update()
+        private void Refresh()
         {
             if(UpdateCalibration && Calibration)
             {
@@ -87,25 +110,22 @@ namespace Ubiq.MotionMatching
                 localToLeg = Quaternion.Euler(Calibration.LocalToLeg);
             }
 
-            if (UpdateRootTransform && LowerBodySource && LowerBodySource.enabled)
+            // if (UpdateRootTransform && mmvrAvatar && mmvrAvatar.hasInput)
+            // {
+            //     transform.position = LowerBodySource.transform.position;
+            //     transform.rotation = LowerBodySource.transform.rotation;
+            // }
+
+            if (UpdateLegTransforms && mmvrAvatar && mmvrAvatar.hasInput)
             {
-                transform.position = LowerBodySource.transform.position;
-                transform.rotation = LowerBodySource.transform.rotation;
+                leftPose = mmvrAvatar.leftLeg;
+                rightPose = mmvrAvatar.rightLeg;
             }
 
-            if (UpdateLegTransforms && LowerBodySource && LowerBodySource.enabled)
-            {
-                LeftPose = LowerBodySource.LeftPose;
-                RightPose = LowerBodySource.RightPose;
-            }
-
-            ApplyTransforms(right, RightPose);
-            ApplyTransforms(left, LeftPose);
-
-            if (upperBodyAvatar)
-            {
-                upperBodyAvatar.AfterSkeletonUpdated();
-            }
+            ApplyTransforms(right, rightPose);
+            ApplyTransforms(left, leftPose);
+            
+            OnSkeletonUpdated.Invoke();
         }
 
         private void ApplyTransforms(Leg leg, LegPose pose)
@@ -264,8 +284,8 @@ namespace Ubiq.MotionMatching
             Gizmos.color = Color.yellow;
             Gizmos.matrix = hips.localToWorldMatrix * Matrix4x4.Rotate(hipsToLocal);
 
-            DrawGizmos(left, LeftPose);
-            DrawGizmos(right, RightPose);
+            DrawGizmos(left, leftPose);
+            DrawGizmos(right, rightPose);
         }
 
         private void DrawGizmos(Leg leg, LegPose pose)
