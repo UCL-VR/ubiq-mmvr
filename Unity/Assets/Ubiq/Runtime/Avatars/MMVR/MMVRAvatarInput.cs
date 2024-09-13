@@ -169,15 +169,18 @@ namespace Ubiq.MotionMatching
                 Debug.LogWarning("Invalid head pose. Not currently handled.");
             }
             
-            if (inputHead.position != head.position)
+            if (inputHead.position == head.position 
+                && inputHead.rotation == head.rotation)
             {
-                var forward = inputHead.forward;
-                forward.y = 0;
-                forward.Normalize();
-                transform.SetPositionAndRotation(
-                    position: new Vector3(inputHead.position.x, 0, inputHead.position.z),
-                    rotation: Quaternion.LookRotation(forward, Vector3.up));
+                return;
             }
+            
+            var forward = inputHead.forward;
+            forward.y = 0;
+            forward.Normalize();
+            transform.SetPositionAndRotation(
+                position: new Vector3(inputHead.position.x, 0, inputHead.position.z),
+                rotation: Quaternion.LookRotation(forward, Vector3.up));
 
             head.position = inputHead.position;
             head.rotation = inputHead.rotation;
@@ -185,7 +188,7 @@ namespace Ubiq.MotionMatching
             var inputLeftHand = input.leftHand.value;
             if (!input.leftHand.valid)
             {
-                inputLeftHand = new Pose(rightHandFallback.position,rightHandFallback.rotation);
+                inputLeftHand = new Pose(leftHandFallback.position,leftHandFallback.rotation);
             }
 
             //TODO processing to ensure good IK

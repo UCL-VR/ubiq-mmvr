@@ -110,13 +110,20 @@ namespace Ubiq.MotionMatching
                 localToLeg = Quaternion.Euler(Calibration.LocalToLeg);
             }
 
-            // if (UpdateRootTransform && mmvrAvatar && mmvrAvatar.hasInput)
-            // {
-            //     transform.position = LowerBodySource.transform.position;
-            //     transform.rotation = LowerBodySource.transform.rotation;
-            // }
+            if (UpdateRootTransform && mmvrAvatar && mmvrAvatar.enabled 
+                && mmvrAvatar.hasInput)
+            {
+                var pos = mmvrAvatar.neck.position;
+                pos.y = 0;
+                transform.position = pos;
+                
+                var fwd = mmvrAvatar.neck.forward;
+                fwd.y = 0;
+                transform.forward = fwd;
+            }
 
-            if (UpdateLegTransforms && mmvrAvatar && mmvrAvatar.hasInput)
+            if (UpdateLegTransforms && mmvrAvatar && mmvrAvatar.enabled 
+                && mmvrAvatar.hasInput)
             {
                 leftPose = mmvrAvatar.leftLeg;
                 rightPose = mmvrAvatar.rightLeg;
@@ -271,7 +278,7 @@ namespace Ubiq.MotionMatching
                 return;
             }
 
-            if (!LowerBodySource || !LowerBodySource.enabled)
+            if (!mmvrAvatar || !mmvrAvatar.enabled || !mmvrAvatar.hasInput)
             {
                 return;
             }
