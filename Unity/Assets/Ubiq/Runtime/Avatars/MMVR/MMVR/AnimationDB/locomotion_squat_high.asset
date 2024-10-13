@@ -10,11 +10,11 @@ MonoBehaviour:
   m_Enabled: 1
   m_EditorHideFlags: 0
   m_Script: {fileID: 11500000, guid: b5cb821b417c4644c970687c3ddeadfc, type: 3}
-  m_Name: locomotion_vr
+  m_Name: locomotion_squat_high
   m_EditorClassIdentifier: 
-  BVH: {fileID: 4900000, guid: 297217b49660956478c95bcd186ead1d, type: 3}
+  BVH: {fileID: 4900000, guid: 51da9b34f1cce59438608000fbc09f94, type: 3}
   UnitScale: 0.01
   Tags:
-  - Name: upright
+  - Name: squat_high
     Start: 00000000
-    End: e1620000
+    End: fd0c0000

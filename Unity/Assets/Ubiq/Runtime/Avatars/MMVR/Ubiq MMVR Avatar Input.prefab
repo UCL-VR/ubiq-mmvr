@@ -59,6 +59,13 @@ MonoBehaviour:
   RotMaximumAdjustmentRatio: 0.1
   DoClamping: 1
   MaxDistanceSimulationBoneAndObject: 0.1
+  LegBendTags:
+  - squat_mid
+  - squat_high
+  LegUprightTag: upright
+  LegBendPercentages:
+  - 0.75
+  - 0.5
 --- !u!1 &2012668465844734589
 GameObject:
   m_ObjectHideFlags: 0

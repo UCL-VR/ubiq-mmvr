@@ -14,6 +14,8 @@ MonoBehaviour:
   m_EditorClassIdentifier: 
   AnimationDatas:
   - {fileID: 11400000, guid: a68bb78ad6b18b143ad01eee95037c7c, type: 2}
+  - {fileID: 11400000, guid: 12a670362ed13e8409a2e6b9843c1c70, type: 2}
+  - {fileID: 11400000, guid: b3e75597b7352c74aa4bd24bf2fbb7d5, type: 2}
   AnimationDataTPose: {fileID: 11400000, guid: 9fc5193788b58b644a61a0d91500e5f0, type: 2}
   HipsForwardLocalVector:
     x: 0

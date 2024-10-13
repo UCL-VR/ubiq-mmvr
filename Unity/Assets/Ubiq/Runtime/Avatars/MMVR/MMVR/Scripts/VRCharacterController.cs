@@ -31,12 +31,18 @@ public class VRCharacterController : MotionMatchingCharacterController
     [Range(0.0f, 2.0f)] public float RotMaximumAdjustmentRatio = 0.1f; // Ratio between the adjustment and the character's velocity to clamp the adjustment
     public bool DoClamping = true;
     [Range(0.0f, 2.0f)] public float MaxDistanceSimulationBoneAndObject = 0.1f; // Max distance between MotionMatching and SimulationObject
+    // Tags ---------------------------------------------------------------------
+    public string[] LegBendTags = new string[] { "squat_mid", "squat_high" };
+    public string LegUprightTag = "upright";
+    public float[] LegBendPercentages = new float[] { 0.85f, 0.65f };
     // --------------------------------------------------------------------------
 
     private Tracker HMDTracker;
     private float3 PositionHMD; // Position of the Simulation Object (controller) for HMD
     private quaternion RotationHMD; // Rotation of the Simulation Object (controller) for HMD
     private float PreviousHMDDesiredSpeedSq;
+    private float DefaultHipsToHeadDistance;
+    private int LegBendIndex;
 
 
     // FUNCTIONS ---------------------------------------------------------------
@@ -46,6 +52,12 @@ public class VRCharacterController : MotionMatchingCharacterController
 
         PositionHMD = new float3();
         RotationHMD = new quaternion();
+
+        if (!MotionMatching.PoseSet.Skeleton.Find(HumanBodyBones.Head, out Skeleton.Joint headJoint)) Debug.LogError("[Motion Matching] Head not found");
+        int headIndex = headJoint.Index;
+        DefaultHipsToHeadDistance = math.distance(MotionMatching.GetSkeletonTransforms()[1].position,
+                                                  MotionMatching.GetSkeletonTransforms()[headIndex].position);
+        MotionMatching.SetQueryTag(LegUprightTag);
 
         Application.targetFrameRate = Mathf.RoundToInt(1.0f / DatabaseDeltaTime);
     }
@@ -79,9 +91,33 @@ public class VRCharacterController : MotionMatchingCharacterController
         PositionHMD = HMDTracker.Device.position;
         RotationHMD = tracker.ComputeNewRot(currentRot, desiredRotation);
 
+        // Adjust Leg Bending
+        AdjustLegBending();
+
         // Adjust MotionMatching to pull the character (moving MotionMatching) towards the Simulation Object (character controller)
         if (DoAdjustment) AdjustSimulationBone();
         if (DoClamping) ClampSimulationBone();
+    }
+
+    private void AdjustLegBending()
+    {
+        float hmdToHipsDistance = math.distance(PositionHMD, MotionMatching.GetSkeletonTransforms()[1].position);
+        float heightPercentage = hmdToHipsDistance / DefaultHipsToHeadDistance;
+        int newLegIndex = 0;
+        for (int i = 0; i < LegBendTags.Length; i++)
+        {
+            float p = LegBendPercentages[i];
+            if (heightPercentage < p)
+            {
+                newLegIndex = i + 1; // 0 is the default
+            }
+        }
+        if (LegBendIndex != newLegIndex)
+        {
+            LegBendIndex = newLegIndex;
+            if (LegBendIndex == 0) MotionMatching.SetQueryTag(LegUprightTag);
+            else MotionMatching.SetQueryTag(LegBendTags[LegBendIndex - 1]);
+        }
     }
 
     private void AdjustSimulationBone()

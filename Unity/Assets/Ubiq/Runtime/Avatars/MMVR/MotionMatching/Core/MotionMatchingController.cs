@@ -41,7 +41,7 @@ namespace MotionMatching
         public float DatabaseFrameTime { get; private set; }
         public int DatabaseFrameRate { get; private set; }
 
-        private PoseSet PoseSet;
+        public PoseSet PoseSet { get; private set; }
         private FeatureSet FeatureSet;
         private Transform[] SkeletonTransforms;
         private float3 AnimationSpaceOriginPos;
